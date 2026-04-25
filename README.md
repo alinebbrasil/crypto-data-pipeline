@@ -112,7 +112,8 @@ Acessar:
 http://localhost:8080
 
 Login:
-admin / admin
+usuário: admin
+senha: exibida no terminal durante a inicialização do Airflow
 
 ### Rodar dashboard
 
