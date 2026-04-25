@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+
+# Dados
+data/raw/
+data/processed/
+
+# Airflow logs
+airflow/logs/
+
+# ambiente
+.env
+
+# sistema
+.DS_Store
+Thumbs.db
