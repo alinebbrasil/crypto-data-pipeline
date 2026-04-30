@@ -112,7 +112,7 @@ python -m streamlit run dashboard/app.py
 ## Estrutura do Projeto
 
 ```text
-crypto-data-pipeline/
+crypto-real-time-data-pipeline/
 │
 ├── dags/
 │
