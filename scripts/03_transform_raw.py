@@ -1,38 +1,39 @@
+"""
+03_transform_raw.py
+
+Objetivo:
+Transformar os arquivos JSON da camada RAW em uma tabela estruturada.
+
+Compatível com:
+1. Formato antigo (dict):
+   {"bitcoin": {"usd": 100, "usd_24h_change": 2}}
+
+2. Formato novo (payload com metadata):
+   {"metadata": {...}, "data": [...]}
+"""
+
 import json
-import os
 from datetime import datetime
+from pathlib import Path
 
 import pandas as pd
 
-# pasta onde estão os arquivos JSON brutos
-INPUT_DIR = "data/raw"
 
-# pasta onde os arquivos tratados serão salvos
-OUTPUT_DIR = "data/processed"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-# arquivos finais da camada processed
-OUTPUT_CSV = os.path.join(OUTPUT_DIR, "crypto_prices.csv")
-OUTPUT_PARQUET = os.path.join(OUTPUT_DIR, "crypto_prices.parquet")
+RAW_DATA_DIR = PROJECT_ROOT / "data" / "raw"
+PROCESSED_DATA_DIR = PROJECT_ROOT / "data" / "processed"
 
-
-def criar_pasta_se_nao_existir(path: str):
-    """
-    Cria a pasta de saída caso ela ainda não exista.
-    """
-    if not os.path.exists(path):
-        os.makedirs(path)
-        print(f"Pasta criada: {path}")
+OUTPUT_CSV = PROCESSED_DATA_DIR / "crypto_prices.csv"
+OUTPUT_PARQUET = PROCESSED_DATA_DIR / "crypto_prices.parquet"
 
 
-def ler_arquivos_json(input_dir: str):
-    """
-    Lê todos os arquivos JSON da pasta raw.
-    Cada arquivo representa uma captura da API.
-    """
-    arquivos = [
-        arquivo for arquivo in os.listdir(input_dir)
-        if arquivo.endswith(".json")
-    ]
+def criar_pasta_se_nao_existir(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+
+
+def listar_arquivos_json(input_dir: Path):
+    arquivos = sorted(input_dir.glob("*.json"))
 
     if not arquivos:
         raise FileNotFoundError("Nenhum arquivo JSON encontrado em data/raw.")
@@ -40,84 +41,129 @@ def ler_arquivos_json(input_dir: str):
     return arquivos
 
 
-def extrair_timestamp_do_nome_arquivo(arquivo: str):
-    """
-    Extrai o timestamp a partir do nome do arquivo.
-
-    Exemplo:
-    crypto_2026-04-25_15-30-00.json
-    """
-    timestamp_texto = arquivo.replace("crypto_", "").replace(".json", "")
-
+def extrair_timestamp_do_nome_arquivo(filepath: Path):
+    timestamp_texto = filepath.stem.replace("crypto_", "")
     return datetime.strptime(timestamp_texto, "%Y-%m-%d_%H-%M-%S")
 
 
-def transformar_json_em_linhas(arquivos):
-    """
-    Transforma os JSONs da API em uma estrutura tabular.
+def carregar_json(filepath: Path):
+    with filepath.open("r", encoding="utf-8") as file:
+        return json.load(file)
 
-    Cada criptomoeda vira uma linha com:
-    - timestamp da coleta
-    - nome da moeda
-    - preço em dólar
-    - variação percentual em 24h
-    - arquivo de origem
+
+def transformar_payload(payload):
     """
+    Converte qualquer formato da API para uma lista padronizada
+    """
+
+    # FORMATO NOVO (com metadata + lista)
+    if isinstance(payload, dict) and "data" in payload:
+        dados = payload["data"]
+
+        # se já for lista (CoinGecko markets)
+        if isinstance(dados, list):
+            return dados
+
+        # se for dict dentro de data
+        if isinstance(dados, dict):
+            return [
+                {
+                    "id": moeda,
+                    "current_price": valores.get("usd"),
+                    "price_change_percentage_24h": valores.get("usd_24h_change"),
+                }
+                for moeda, valores in dados.items()
+            ]
+
+    # FORMATO ANTIGO (dict direto)
+    if isinstance(payload, dict):
+        return [
+            {
+                "id": moeda,
+                "current_price": valores.get("usd"),
+                "price_change_percentage_24h": valores.get("usd_24h_change"),
+            }
+            for moeda, valores in payload.items()
+        ]
+
+    # FORMATO LISTA (já pronto)
+    if isinstance(payload, list):
+        return payload
+
+    raise ValueError("Formato de payload não reconhecido.")
+
+
+def transformar_arquivos_em_dataframe(arquivos):
     linhas = []
 
-    for arquivo in arquivos:
-        caminho = os.path.join(INPUT_DIR, arquivo)
-        timestamp = extrair_timestamp_do_nome_arquivo(arquivo)
+    for filepath in arquivos:
+        timestamp = extrair_timestamp_do_nome_arquivo(filepath)
+        payload = carregar_json(filepath)
 
-        with open(caminho, "r") as f:
-            dados = json.load(f)
+        dados = transformar_payload(payload)
 
-        for moeda, valores in dados.items():
-            linhas.append({
-                "timestamp": timestamp,
-                "crypto": moeda,
-                "price_usd": valores.get("usd"),
-                "change_24h": valores.get("usd_24h_change"),
-                "source_file": arquivo
-            })
+        for item in dados:
+            linhas.append(
+                {
+                    "timestamp": timestamp,
+                    "crypto_id": item.get("id"),
+                    "symbol": item.get("symbol"),
+                    "crypto_name": item.get("name"),
+                    "price_usd": item.get("current_price"),
+                    "price_change_percentage_24h": item.get(
+                        "price_change_percentage_24h"
+                    ),
+                    "source_file": filepath.name,
+                }
+            )
 
-    return linhas
-
-
-def salvar_tabela(linhas):
-    """
-    Salva os dados transformados em CSV e Parquet.
-    """
     df = pd.DataFrame(linhas)
 
+    if df.empty:
+        raise ValueError("Nenhum dado foi transformado.")
+
+    return df
+
+
+def limpar_dataframe(df):
+    df = df.copy()
+
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
+    df["price_usd"] = pd.to_numeric(df["price_usd"], errors="coerce")
+    df["price_change_percentage_24h"] = pd.to_numeric(
+        df["price_change_percentage_24h"], errors="coerce"
+    )
+
+    df = df.dropna(subset=["crypto_id", "price_usd"])
+
+    df = df.drop_duplicates(subset=["timestamp", "crypto_id"])
+
+    df = df.sort_values(["crypto_id", "timestamp"])
+
+    return df
+
+
+def salvar_dataframe(df):
     df.to_csv(OUTPUT_CSV, index=False)
     df.to_parquet(OUTPUT_PARQUET, index=False)
 
-    print(f"Arquivo CSV salvo em: {OUTPUT_CSV}")
-    print(f"Arquivo Parquet salvo em: {OUTPUT_PARQUET}")
+    print(f"CSV salvo em: {OUTPUT_CSV}")
+    print(f"Parquet salvo em: {OUTPUT_PARQUET}")
     print(f"Total de registros: {len(df)}")
 
 
 def main():
-    """
-    Pipeline de transformação:
+    print("Iniciando transformação...")
 
-    1. Localiza arquivos JSON brutos
-    2. Extrai timestamp do nome dos arquivos
-    3. Converte JSON em tabela
-    4. Salva camada processed em CSV e Parquet
-    """
-    print("Iniciando transformação dos dados brutos...")
+    criar_pasta_se_nao_existir(PROCESSED_DATA_DIR)
 
-    criar_pasta_se_nao_existir(OUTPUT_DIR)
+    arquivos = listar_arquivos_json(RAW_DATA_DIR)
+    df = transformar_arquivos_em_dataframe(arquivos)
+    df = limpar_dataframe(df)
 
-    arquivos = ler_arquivos_json(INPUT_DIR)
+    salvar_dataframe(df)
 
-    linhas = transformar_json_em_linhas(arquivos)
-
-    salvar_tabela(linhas)
-
-    print("Transformação concluída com sucesso.")
+    print("Transformação concluída.")
 
 
 if __name__ == "__main__":
