@@ -1,71 +1,37 @@
-import json
-import os
-from datetime import datetime
-from api_extract import extrair_dados_api
-
-# pasta onde os dados serão armazenados
-OUTPUT_DIR = "data/raw"
-
-
-def criar_pasta_se_nao_existir(path: str):
+def validar_dados_api(data: object) -> None:
     """
-    Cria diretório caso ele ainda não exista.
+    Valida se a API retornou dados.
+
+    Aceita dois formatos:
+    1. Lista de moedas
+    2. Dicionário com moedas como chave
     """
-    if not os.path.exists(path):
-        os.makedirs(path)
-        print(f"Pasta criada: {path}")
+    if data is None:
+        raise ValueError("A API retornou None.")
+
+    if isinstance(data, list) and len(data) == 0:
+        raise ValueError("A API retornou uma lista vazia.")
+
+    if isinstance(data, dict) and len(data) == 0:
+        raise ValueError("A API retornou um dicionário vazio.")
+
+    if not isinstance(data, (list, dict)):
+        raise ValueError("Formato inesperado: esperado lista ou dicionário.")
 
 
-def gerar_nome_arquivo():
+def preparar_payload_raw(data: object) -> dict:
     """
-    Gera nome de arquivo baseado no timestamp atual.
+    Adiciona metadados à resposta bruta da API.
 
-    Exemplo:
-        crypto_2026-04-25_15-30-00.json
+    Aceita dados em lista ou dicionário.
     """
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    return f"crypto_{timestamp}.json"
+    records_count = len(data) if isinstance(data, (list, dict)) else 0
 
-
-def salvar_json(data: dict, path: str):
-    """
-    Salva dados em formato JSON no caminho especificado.
-    """
-    with open(path, "w") as file:
-        json.dump(data, file, indent=4)
-
-    print(f"Arquivo salvo em: {path}")
-
-
-def main():
-    """
-    Pipeline de ingestão:
-
-    1. Cria pasta raw (se necessário)
-    2. Extrai dados da API
-    3. Gera nome de arquivo com timestamp
-    4. Salva dados em JSON
-    """
-
-    print("Iniciando pipeline de ingestão...")
-
-    # garante que a pasta existe
-    criar_pasta_se_nao_existir(OUTPUT_DIR)
-
-    # extrai dados da API
-    data = extrair_dados_api()
-
-    # gera nome do arquivo
-    filename = gerar_nome_arquivo()
-
-    # caminho completo
-    filepath = os.path.join(OUTPUT_DIR, filename)
-
-    # salva o JSON
-    salvar_json(data, filepath)
-
-    print("Pipeline finalizado com sucesso.")
-
-
-if __name__ == "__main__":
-    main()
+    return {
+        "metadata": {
+            "source": "CoinGecko API",
+            "collected_at": datetime.now().isoformat(timespec="seconds"),
+            "records_count": records_count,
+        },
+        "data": data,
+    }

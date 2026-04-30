@@ -1,149 +1,188 @@
-# Crypto Data Pipeline
+# Crypto Real-Time Monitoring Pipeline
 
-Projeto de engenharia de dados para ingestão, processamento e análise de dados de criptomoedas em tempo quase real, utilizando API pública, orquestração com Airflow e visualização com Streamlit.
+## Visão Geral
 
-## Objetivo
+Este projeto apresenta um pipeline de dados para monitoramento de criptomoedas em tempo quase real, utilizando ingestão via API, organização em camadas de dados e visualização interativa com Streamlit.
 
-Construir um pipeline de dados completo que simula um cenário real de ingestão contínua, processamento em camadas e disponibilização de dados para análise.
+O objetivo é simular um fluxo moderno de dados, no qual informações são coletadas periodicamente, armazenadas em formato bruto, transformadas para análise e disponibilizadas em um dashboard com atualização automática.
+
+---
 
 ## Arquitetura do Projeto
 
-O pipeline segue a seguinte estrutura:
+O fluxo do pipeline segue a estrutura:
 
-API → Ingestão → Camada Raw → Transformação → Camada Processed → Camada Analítica → Dashboard
+API CoinGecko → Camada RAW → Camada PROCESSED → Camada ANALYTICS → Dashboard Streamlit
+
+---
+
+## Camadas de Dados
+
+### RAW
+
+A camada RAW armazena os dados brutos coletados da API em arquivos JSON.
+
+Essa camada preserva a resposta original da fonte, permitindo rastreabilidade e reprocessamento posterior.
+
+### PROCESSED
+
+A camada PROCESSED transforma os arquivos JSON em uma estrutura tabular, salvando os dados em CSV e Parquet.
+
+Essa etapa organiza os campos principais, como criptomoeda, timestamp, preço e variação percentual.
+
+### ANALYTICS
+
+A camada ANALYTICS prepara os dados para consumo analítico no dashboard.
+
+Foram criadas métricas como:
+
+* preço anterior
+* variação desde a última coleta
+* variação percentual desde a última coleta
+* status de movimento (alta, queda ou estável)
+
+---
+
+## Pipeline
+
+O projeto conta com um runner único para executar todas as etapas do pipeline em sequência:
+
+1. Coleta dos dados da API
+2. Salvamento dos dados brutos em JSON
+3. Transformação dos dados para camada processada
+4. Criação da camada analítica
+
+Para executar o pipeline completo:
+
+```bash
+python scripts/run_pipeline.py
+```
+
+---
+
+## Dashboard
+
+O dashboard foi desenvolvido em Streamlit e consome a camada ANALYTICS.
+
+Ele apresenta:
+
+* total de registros coletados
+* quantidade de criptomoedas monitoradas
+* quantidade de arquivos processados
+* última atualização da base
+* preço atual por criptomoeda
+* variação percentual em 24h
+* variação desde a última coleta
+* status de movimento
+* histórico de preços
+* tabela com dados históricos
+
+O dashboard possui atualização automática da visualização, simulando um monitoramento em tempo quase real.
+
+Para executar:
+
+```bash
+streamlit run dashboard/app.py
+```
+
+ou:
+
+```bash
+python -m streamlit run dashboard/app.py
+```
+
+---
 
 ## Tecnologias Utilizadas
 
 * Python
-* Pandas
-* Requests
-* Apache Airflow
-* Docker
+* pandas
+* API CoinGecko
+* JSON
 * Parquet
 * Streamlit
+* streamlit-autorefresh
+* Airflow
+* ETL
+* Data Pipeline
+* Data Analytics
+
+---
 
 ## Estrutura do Projeto
 
-```
+```text
 crypto-data-pipeline/
-├── airflow/
-│   ├── dags/
-│   │   └── crypto_pipeline_dag.py
-│   └── docker-compose.yml
+│
+├── dags/
+│
 ├── dashboard/
 │   └── app.py
+│
 ├── data/
 │   ├── raw/
-│   └── processed/
+│   ├── processed/
+│   └── analytics/
+│
 ├── scripts/
 │   ├── api_extract.py
 │   ├── 02_save_raw_json.py
 │   ├── 03_transform_raw.py
-│   └── 04_create_analytics.py
+│   ├── 04_create_analytics.py
+│   └── run_pipeline.py
+│
 ├── requirements.txt
 └── README.md
 ```
 
-## Etapas do Pipeline
+---
 
-### 1. Extração de Dados
+## Como Executar o Projeto
 
-* Consumo de API pública de criptomoedas
-* Implementação de retry automático em caso de falha
-* Dados retornados em formato JSON
+### 1. Instalar dependências
 
-### 2. Camada Raw
-
-* Armazenamento dos dados brutos em arquivos JSON
-* Versionamento por timestamp
-
-### 3. Transformação
-
-* Leitura dos arquivos JSON
-* Estruturação dos dados em formato tabular
-* Inclusão de timestamp de coleta
-* Salvamento em CSV e Parquet
-
-### 4. Camada Analítica
-
-* Agregação de dados por criptomoeda
-* Cálculo de métricas como:
-
-  * preço médio
-  * preço mínimo e máximo
-  * variação média
-  * número de capturas
-
-### 5. Orquestração com Airflow
-
-* Execução automática do pipeline a cada 5 minutos
-* Controle de dependências entre tarefas
-* Implementação de retry em caso de falha
-
-### 6. Dashboard com Streamlit
-
-* Visualização dos dados em tempo quase real
-* Filtro por criptomoeda
-* Indicadores principais:
-
-  * preço atual
-  * variação percentual
-  * número de registros
-* Gráficos de evolução temporal
-
-## Execução do Projeto
-
-### Rodar pipeline manualmente
-
-```
-python scripts/02_save_raw_json.py
-python scripts/03_transform_raw.py
-python scripts/04_create_analytics.py
+```bash
+pip install -r requirements.txt
 ```
 
-### Rodar Airflow com Docker
+### 2. Executar o pipeline completo
 
-```
-cd airflow
-docker-compose up
-```
-
-Acessar:
-http://localhost:8080
-
-Login:
-
-usuário: admin
-
-senha: exibida no terminal durante a inicialização do Airflow
-
-### Rodar dashboard
-
-```
-python -m streamlit run dashboard/app.py
+```bash
+python scripts/run_pipeline.py
 ```
 
-Acessar:
-http://localhost:8501
+### 3. Abrir o dashboard
 
-## Diferenciais do Projeto
+```bash
+streamlit run dashboard/app.py
+```
 
-* Pipeline com dados em atualização contínua (API)
-* Arquitetura em camadas (raw, processed, analytics)
-* Uso de formato Parquet
-* Orquestração com Airflow
-* Tratamento de falhas com retry
-* Dashboard interativo
+---
 
-## Possíveis Evoluções
+## Principais Aprendizados
 
-* Integração com AWS S3 ou Azure
-* Uso de banco de dados analítico
-* Streaming em tempo real (Kafka)
-* Alertas automáticos
-* Deploy do dashboard
+* construção de pipeline com ingestão via API
+* organização de dados em camadas RAW, PROCESSED e ANALYTICS
+* transformação de dados brutos em base analítica
+* criação de métricas de variação entre coletas
+* uso de Parquet para armazenamento analítico
+* desenvolvimento de dashboard com atualização automática
+* simulação de monitoramento em tempo quase real
 
-## Autor
+---
+
+## Insight Técnico
+
+O projeto evoluiu de um dashboard simples de criptomoedas para um pipeline estruturado, com separação clara entre coleta, transformação, camada analítica e visualização.
+
+Essa arquitetura melhora a organização, facilita manutenção e aproxima o projeto de um fluxo real utilizado em ambientes de dados.
+
+---
+
+## Autora
 
 Aline Bastos Brasil
-https://www.linkedin.com/in/alinebbrasil/
+
+Analista de Dados | SQL | Python | Power BI | ETL & Data Pipelines
+
+LinkedIn: https://www.linkedin.com/in/alinebbrasildata/
